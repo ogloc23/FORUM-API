@@ -29,6 +29,8 @@ export const typeDefs = gql`
     createTopic(courseId: ID!, title: String!, description: String!): Topic!
     createComment(topicId: ID!, text: String!): Comment!
     createReply(commentId: ID!, text: String!): Reply!
+    requestPasswordReset(email: String!): Message!
+    resetPassword(token: String!, newPassword: String!): Message!
   }
 
   type Course {
@@ -50,7 +52,7 @@ export const typeDefs = gql`
     updatedAt: String!
   }
 
-  type Comment {
+  type Comment { 
   id: ID!
   text: String!
   createdBy: User!
@@ -67,4 +69,7 @@ export const typeDefs = gql`
   createdAt: String!
   updatedAt: String!
  }
+
+ type Message {
+  message: String!}
 `;

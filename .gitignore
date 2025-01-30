@@ -1,2 +1,21 @@
 env
 node_modules
+seedCourses.js
+testEmail.js
+updateReplies.js
+   // REQUEST PASSWORD RESET MUTATION RESOLVER FUNCTION 
+    requestPasswordReset: async (_, { email }) => {
+      const user = await User.findOne({ email });
+      if (!user) {
+        throw new Error('User not found');
+      }
+      // Generate a reset token
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      user.resetPasswordToken = resetToken;
+      user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 1 hour expiration
+      await user.save();
+      // Send email with reset link
+      const resetLink = `http://localhost:3000/reset-password?token=${resetToken}`;
+      await sendEmail(user.email, 'Password Reset Request', `Click here to reset your password: ${resetLink}`);
+      return { message: 'Reset link sent to email' };
+    },
