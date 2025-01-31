@@ -24,6 +24,10 @@ export const resolvers = {
       return await Course.findById(id);
     },
 
+    topics: async () => {
+      return await topics();
+    },
+
     getTopicsByCourse: async (_, { courseId }) => {
       const topics = await Topic.find({ course: courseId })
         .populate('createdBy', '_id username email') // Ensure population
@@ -48,25 +52,39 @@ export const resolvers = {
     },
     
   
-    
+    // 
     getCommentsByTopic: async (_, { topicId }) => {
       const comments = await Comment.find({ topic: topicId })
-          .populate('createdBy', 'username email'); // Ensure createdBy is populated
-  
+        .populate('createdBy', 'username email')
+        .populate({
+          path: 'replies',
+          populate: { path: 'createdBy', select: 'username email' }
+        });
+    
       return comments.map(comment => ({
-          id: comment._id.toString(), // Ensure comment ID is a string
-          text: comment.text,
-          createdBy: comment.createdBy
-              ? {
-                  id: comment.createdBy._id.toString(), // Convert User _id to string
-                  username: comment.createdBy.username,
-                  email: comment.createdBy.email,
-              }
-              : null, // Handle cases where createdBy might be missing
-          createdAt: new Date(comment.createdAt).toISOString(),
-          updatedAt: new Date(comment.updatedAt).toISOString()
+        id: comment._id.toString(),
+        text: comment.text,
+        createdBy: {
+          id: comment.createdBy._id.toString(),
+          username: comment.createdBy.username,
+          email: comment.createdBy.email,
+        },
+        replies: comment.replies.map(reply => ({
+          id: reply._id.toString(),
+          text: reply.text,
+          createdBy: {
+            id: reply.createdBy._id.toString(),
+            username: reply.createdBy.username,
+            email: reply.createdBy.email,
+          },
+          createdAt: reply.createdAt?.toISOString() || new Date().toISOString(), // ✅ Ensure fallback value
+          updatedAt: reply.updatedAt?.toISOString() || new Date().toISOString(), // ✅ Ensure fallback value
+        })),
+        createdAt: comment.createdAt?.toISOString() || new Date().toISOString(), // ✅ Ensure fallback value
+        updatedAt: comment.updatedAt?.toISOString() || new Date().toISOString(), // ✅ Ensure fallback value
       }));
-  },
+    },
+    
   
   
     getRepliesByComment: async (_, { commentId }) => {
@@ -81,7 +99,27 @@ export const resolvers = {
         updatedAt: reply.updatedAt.toISOString()  // Convert to ISO format
       }));
     },
+
+    topics : async () => {
+      const topicsList = await Topic.find()
+        .populate('course', 'title') // Populate course title
+        .populate('createdBy', 'username') // Populate creator details
+        .populate({
+          path: 'comments',
+          select: 'text likes createdBy', // Select the relevant fields for comments
+          populate: {
+            path: 'createdBy',
+            select: 'username',
+          },
+        })
+        .lean(); // Use lean to return plain objects instead of Mongoose documents
     
+      return topicsList.map(topic => {
+        topic.commentCount = topic.comments.length;
+        topic.likesCount = topic.comments.reduce((acc, comment) => acc + comment.likes.length, 0); // Count total likes on comments
+        return topic;
+      });
+    },
   },
 
   Mutation: {
@@ -232,6 +270,11 @@ export const resolvers = {
     
       // Save the comment
       const savedComment = await comment.save();
+
+     // **Update the Topic's comments array**
+      await Topic.findByIdAndUpdate(topicId, { 
+      $push: { comments: savedComment._id } 
+      });
     
       // Populate the fields
       await savedComment.populate('createdBy', 'username email');
@@ -268,7 +311,17 @@ export const resolvers = {
         createdBy: user.userId,
         comment: commentId,
       });
+
+      //  Save the Reply
       const savedReply = await reply.save();
+      
+      // Update the comment's replie array
+      await Comment.findByIdAndUpdate(
+      commentId, 
+      { $push: { replies: savedReply._id} }, 
+      { new: true}
+     );
+
       // Populate the createdBy field
       await savedReply.populate('createdBy', 'username email');
       
@@ -286,5 +339,113 @@ export const resolvers = {
       };
       return formattedReply;
     },
+
+    // LIKE COMMENT MUTATION RESOLVER FUNCTION 
+    likeComment: async (_, { commentId }, { user }) => {
+      if (!user || !user.userId) {
+        throw new Error('Not authenticated');
+      }
+  
+      const comment = await Comment.findById(commentId).populate('likes', 'username email');
+      if (!comment) {
+        throw new Error('Comment not found');
+      }
+  
+      // Check if the user already liked the comment
+      if (comment.likes.some(likedUser => likedUser._id.toString() === user.userId)) {
+        throw new Error('You have already liked this comment');
+      }
+  
+      comment.likes.push(user.userId);
+      await comment.save();
+      await comment.populate('likes', 'id username email'); // Ensure full user details
+  
+      return comment;
+    },
+
+    // UNLIKE COMMENT
+  unlikeComment: async (_, { commentId }, { user }) => {
+    if (!user || !user.userId) {
+      throw new Error('Not authenticated');
+    }
+
+    const comment = await Comment.findById(commentId).populate('likes', 'username email');
+    if (!comment) {
+      throw new Error('Comment not found');
+    }
+
+    // Check if the user actually liked the comment before
+    comment.likes = comment.likes.filter(likedUser => likedUser._id.toString() !== user.userId);
+    await comment.save();
+    await comment.populate('likes', 'id username email');
+
+    return comment;
+  },
+
+
+    // LIKE REPLY MUTATION RRESOLVER FUNCTION 
+    likeReply: async (_, { replyId }, { user }) => {
+      if (!user || !user.userId) {
+        throw new Error('Not authenticated');
+      }
+  
+      const reply = await Reply.findById(replyId).populate('likes', 'username email');
+      if (!reply) {
+        throw new Error('Reply not found');
+      }
+  
+      if (reply.likes.some(likedUser => likedUser._id.toString() === user.userId)) {
+        throw new Error('You have already liked this reply');
+      }
+  
+      reply.likes.push(user.userId);
+      await reply.save();
+      await reply.populate('likes', 'id username email');
+  
+      return reply;
+    },
+
+    unlikeReply: async (_, { replyId }, { user }) => {
+      if (!user || !user.userId) {
+        throw new Error('Not authenticated');
+      }
+  
+      const reply = await Reply.findById(replyId).populate('likes', 'username email');
+      if (!reply) {
+        throw new Error('Reply not found');
+      }
+  
+      reply.likes = reply.likes.filter(likedUser => likedUser._id.toString() !== user.userId);
+      await reply.save();
+      await reply.populate('likes', 'id username email');
+  
+      return reply;
+    },
+
+    incrementTopicViews: async (_, { topicId }) => {
+      const topic = await Topic.findById(topicId);
+      
+      if (!topic) {
+        throw new Error("Topic not found");
+      }
+    
+      // Ensure views is a number, default to 0 if undefined
+      if (!topic.views || isNaN(topic.views)) {
+        topic.views = 0;
+      }
+    
+      topic.views += 1; // Increment views
+    
+      // ✅ Use `findByIdAndUpdate` to ensure it saves to the database
+      const updatedTopic = await Topic.findByIdAndUpdate(
+        topicId,
+        { views: topic.views },
+        { new: true } // Returns the updated document
+      );
+    
+      return updatedTopic;
+    },
+    
+    
   },
 };

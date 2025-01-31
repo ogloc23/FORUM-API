@@ -13,7 +13,55 @@ export const typeDefs = gql`
     user: User!
   }
 
+  
+
+  type Course {
+    id: ID!
+    title: String!
+    description: String!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type Topic {
+    id: ID!
+    title: String!
+    description: String!
+    course: ID!
+    createdBy: User!
+    comments: [Comment!]!
+    commentCount: Int!
+    likesCount: Int!
+    views: Int!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type Comment { 
+  id: ID!
+  text: String!
+  createdBy: User!
+  topic: Topic!
+  likes: [User]!
+  createdAt: String!
+  updatedAt: String!
+ }
+
+ type Reply {
+  id: ID!
+  text: String!
+  createdBy: User!
+  comment: Comment!
+  likes: [User]!
+  createdAt: String!
+  updatedAt: String!
+ }
+
+ type Message {
+  message: String!}
+
   type Query {
+    topics: [Topic]
     getAllUsers: [User!]!
     getUserProfile(id: ID!): User
     getAllCourses: [Course]
@@ -31,45 +79,10 @@ export const typeDefs = gql`
     createReply(commentId: ID!, text: String!): Reply!
     requestPasswordReset(email: String!): Message!
     resetPassword(token: String!, newPassword: String!): Message!
+    likeComment(commentId: ID!): Comment!
+    unlikeComment(commentId: ID!): Comment!
+    likeReply(replyId: ID!): Reply!
+    unlikeReply(replyId: ID!): Reply!
+    incrementTopicViews(topicId: ID!): Topic!
   }
-
-  type Course {
-    id: ID!
-    title: String!
-    description: String!
-    createdAt: String!
-    updatedAt: String!
-  }
-
-  type Topic {
-    id: ID!
-    title: String!
-    description: String!
-    course: ID!
-    createdBy: User!
-    comments: [Comment!]!
-    createdAt: String!
-    updatedAt: String!
-  }
-
-  type Comment { 
-  id: ID!
-  text: String!
-  createdBy: User!
-  topic: Topic!
-  createdAt: String!
-  updatedAt: String!
- }
-
- type Reply {
-  id: ID!
-  text: String!
-  createdBy: User!
-  comment: Comment!
-  createdAt: String!
-  updatedAt: String!
- }
-
- type Message {
-  message: String!}
 `;

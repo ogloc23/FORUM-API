@@ -7,6 +7,7 @@ const TopicSchema = new mongoose.Schema(
     course: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', required: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     comments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    views: { type: Number, default: 0 },
   },
   { timestamps: true } // Automatically creates createdAt & updatedAt
 );
