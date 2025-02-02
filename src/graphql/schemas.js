@@ -44,6 +44,7 @@ export const typeDefs = gql`
   createdBy: User!
   topic: Topic!
   likes: [User]!
+  replies: [Reply]!
   createdAt: String!
   updatedAt: String!
  }
@@ -63,11 +64,13 @@ export const typeDefs = gql`
 
   type Query {
     topics: [Topic]
+    getTopicById(id: ID!): Topic
+    getTopicBySlug(slug: String!): Topic 
     getAllUsers: [User!]!
     getUserProfile(id: ID!): User
     getAllCourses: [Course]
     getCourseById(id: ID!): Course
-    getCourseBySlug(slug:String!): Course
+    getCourseBySlug(slug: String!): Course
     getTopicsByCourse(courseId: ID!): [Topic]
     getCommentsByTopic(topicId: ID!): [Comment]
     getRepliesByComment(commentId: ID!): [Reply]

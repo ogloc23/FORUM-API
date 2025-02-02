@@ -26,10 +26,130 @@ export const resolvers = {
     getCourseBySlug: async (_, { slug }) => {
       return await Course.findOne({ slug });
     },
+    // Define the topic query resolver function
     topics: async () => {
-      return await topics();
+      return await Topic();
     },
 
+    getTopicById: async (_, { id }) => {
+      const topic = await Topic.findById(id)
+        .populate('createdBy', '_id username email')
+        .populate({
+          path: 'comments',
+          populate: [
+            { path: 'createdBy', select: '_id username email' },
+            {
+              path: 'likes',
+              select: '_id username email',
+              match: { _id: { $ne: null } }, // Exclude null likes
+            },
+            {
+              path: 'replies',
+              populate: { path: 'createdBy', select: '_id username email' },
+            },
+          ],
+        });
+    
+      if (!topic) {
+        throw new Error('Topic not found');
+      }
+    
+      return {
+        id: topic._id.toString(),
+        title: topic.title,
+        description: topic.description,
+        createdBy: topic.createdBy
+          ? {
+              id: topic.createdBy._id.toString(),
+              username: topic.createdBy.username,
+              email: topic.createdBy.email,
+            }
+          : { id: "UNKNOWN", username: "Deleted User", email: "" }, // ✅ Prevents null errors
+    
+        comments: topic.comments.map(comment => ({
+          id: comment._id.toString(),
+          text: comment.text,
+          createdBy: comment.createdBy
+            ? {
+                id: comment.createdBy._id.toString(),
+                username: comment.createdBy.username,
+                email: comment.createdBy.email,
+              }
+            : { id: "UNKNOWN", username: "Deleted User", email: "" }, // ✅ Prevents null errors
+    
+          likes: comment.likes
+            .map(user => (user ? user._id.toString() : null))
+            .filter(Boolean), // ✅ Ensures only valid users
+    
+          createdAt: comment.createdAt.toISOString(),
+          updatedAt: comment.updatedAt.toISOString(),
+          replies: comment.replies.map(reply => ({
+            id: reply._id.toString(),
+            text: reply.text,
+            createdBy: reply.createdBy
+              ? {
+                  id: reply.createdBy._id.toString(),
+                  username: reply.createdBy.username,
+                  email: reply.createdBy.email,
+                }
+              : { id: "UNKNOWN", username: "Deleted User", email: "" }, // ✅ Prevents null errors
+            createdAt: reply.createdAt.toISOString(),
+            updatedAt: reply.updatedAt.toISOString(),
+          })),
+        })),
+    
+        commentCount: topic.comments.length || 0, // ✅ Always return an integer
+        likesCount: topic.comments.reduce((acc, comment) => acc + (comment.likes?.length || 0), 0),
+        views: topic.views || 0,
+        createdAt: topic.createdAt.toISOString(),
+        updatedAt: topic.updatedAt.toISOString(),
+      };
+    },
+
+    getTopicBySlug: async (_, { slug }) => {
+      const topic = await Topic.findOne({ slug })
+        .populate('createdBy', '_id username email') // ✅ Ensure `_id` is selected
+        .populate({
+          path: 'comments',
+          populate: {
+            path: 'createdBy',
+            select: '_id username email', // ✅ Explicitly request `_id`
+          }
+        });
+    
+      if (!topic) {
+        throw new Error('Topic not found');
+      }
+    
+      return {
+        id: topic._id.toString(),
+        slug: topic.slug,
+        title: topic.title,
+        description: topic.description,
+        createdBy: topic.createdBy
+          ? {
+              id: topic.createdBy._id.toString(), // ✅ Ensure ID is included
+              username: topic.createdBy.username,
+              email: topic.createdBy.email,
+            }
+          : null, // Handle missing user
+    
+        comments: topic.comments.map(comment => ({
+          text: comment.text,
+          createdBy: comment.createdBy
+            ? {
+                id: comment.createdBy._id.toString(), // ✅ Ensure ID is included
+                username: comment.createdBy.username,
+              }
+            : null // Handle missing user
+        }))
+      };
+    },
+    
+    
+    
+    
+    
     getTopicsByCourse: async (_, { courseId }) => {
       const topics = await Topic.find({ course: courseId })
         .populate('createdBy', '_id username email') // Ensure population
@@ -243,7 +363,7 @@ export const resolvers = {
         updatedAt: topicData.updatedAt,  // ISO string
       };
     },
-    
+
 
     createComment: async (_, { topicId, text }, { user }) => {
       if (!user || !user.userId) {

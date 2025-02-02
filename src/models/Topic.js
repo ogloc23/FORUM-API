@@ -1,12 +1,16 @@
 import mongoose from 'mongoose';
+import slug from 'mongoose-slug-generator';
+
+mongoose.plugin(slug); // ✅ plugin added to mongoose
 
 const TopicSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
+    slug: { type: String, slug: 'title', unique: true }, 
     description: { type: String, required: true },
     course: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', required: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    comments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    comments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Comment' }], // ✅ Correct reference
     views: { type: Number, default: 0 },
   },
   { timestamps: true } // Automatically creates createdAt & updatedAt

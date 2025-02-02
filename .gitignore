@@ -2,6 +2,7 @@
 node_modules
 src/seedCourses.js
 src/testEmail.js
+scripts/seedCourses.js
 updateReplies.js
    // REQUEST PASSWORD RESET MUTATION RESOLVER FUNCTION 
     requestPasswordReset: async (_, { email }) => {
