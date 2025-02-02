@@ -23,7 +23,9 @@ export const resolvers = {
     getCourseById: async (_, { id }) => {
       return await Course.findById(id);
     },
-
+    getCourseBySlug: async (_, { slug }) => {
+      return await Course.findOne({ slug });
+    },
     topics: async () => {
       return await topics();
     },

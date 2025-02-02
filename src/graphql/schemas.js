@@ -18,6 +18,7 @@ export const typeDefs = gql`
   type Course {
     id: ID!
     title: String!
+    slug: String!
     description: String!
     createdAt: String!
     updatedAt: String!
@@ -66,6 +67,7 @@ export const typeDefs = gql`
     getUserProfile(id: ID!): User
     getAllCourses: [Course]
     getCourseById(id: ID!): Course
+    getCourseBySlug(slug:String!): Course
     getTopicsByCourse(courseId: ID!): [Topic]
     getCommentsByTopic(topicId: ID!): [Comment]
     getRepliesByComment(commentId: ID!): [Reply]
