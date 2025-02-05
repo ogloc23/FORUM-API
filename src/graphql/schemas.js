@@ -27,6 +27,7 @@ export const typeDefs = gql`
   type Topic {
     id: ID!
     title: String!
+    slug: String!
     description: String!
     course: ID!
     createdBy: User!

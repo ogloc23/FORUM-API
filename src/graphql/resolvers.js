@@ -6,6 +6,7 @@ import Comment from '../models/Comment.js';
 import Reply from '../models/Reply.js';
 import { generateToken } from '../utils/auth.js';
 import { sendEmail } from '../utils/email.js';
+import generateSlug from '../utils/slug.js';  
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 
@@ -145,10 +146,7 @@ export const resolvers = {
         }))
       };
     },
-    
-    
-    
-    
+  
     
     getTopicsByCourse: async (_, { courseId }) => {
       const topics = await Topic.find({ course: courseId })
@@ -324,46 +322,56 @@ export const resolvers = {
     },
 
 
-    createTopic: async (_, { courseId, title, description }, { user }) => {
+    createTopic : async (_, { courseId, title, description }, { user }) => {
+      // Check if user is authenticated
       if (!user || !user.userId) {
         throw new Error('Not authenticated');
       }
     
+      // Find the course by ID
       const course = await Course.findById(courseId);
       if (!course) {
         throw new Error('Course not found');
       }
     
+      // Generate the slug from the title
+      const slug = generateSlug(title);
+    
+      // Create the new topic
       const topic = new Topic({
         title,
+        slug,  // Assign the generated slug here
         description,
         course: courseId,
         createdBy: user.userId,
       });
     
+      // Save the topic to the database
       const savedTopic = await topic.save();
       await savedTopic.populate('createdBy', 'username email');
     
-      // Convert to plain object and manually handle the date conversion
-      const topicData = savedTopic.toObject(); // Convert the Mongoose document to a plain JavaScript object
-      topicData.createdAt = topicData.createdAt.toISOString(); // Convert createdAt to ISO string
-      topicData.updatedAt = topicData.updatedAt.toISOString(); // Convert updatedAt to ISO string
+      // Convert to plain object and handle the date conversion
+      const topicData = savedTopic.toObject();
+      topicData.createdAt = topicData.createdAt.toISOString();
+      topicData.updatedAt = topicData.updatedAt.toISOString();
     
       return {
         id: topicData._id.toString(),
         title: topicData.title,
         description: topicData.description,
+        slug: topicData.slug,  // Include the slug in the response
         course: topicData.course.toString(),
         createdBy: {
           id: topicData.createdBy._id.toString(),
           username: topicData.createdBy.username,
           email: topicData.createdBy.email,
         },
-        createdAt: topicData.createdAt,  // ISO string
-        updatedAt: topicData.updatedAt,  // ISO string
+        createdAt: topicData.createdAt,
+        updatedAt: topicData.updatedAt,
       };
     },
-
+    
+    
 
     createComment: async (_, { topicId, text }, { user }) => {
       if (!user || !user.userId) {

@@ -1,16 +1,14 @@
 import mongoose from 'mongoose';
-import slug from 'mongoose-slug-generator';
-
-mongoose.plugin(slug); // ✅ plugin added to mongoose
+import generateSlug from '../utils/slug.js';  // Import the slugify function
 
 const TopicSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
-    slug: { type: String, slug: 'title', unique: true }, 
+    slug: { type: String, unique: true }, // No need for the 'slug' plugin
     description: { type: String, required: true },
     course: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', required: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    comments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Comment' }], // ✅ Correct reference
+    comments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Comment' }],
     views: { type: Number, default: 0 },
   },
   { timestamps: true } // Automatically creates createdAt & updatedAt
@@ -25,6 +23,7 @@ TopicSchema.virtual('updatedAtISO').get(function () {
   return this.updatedAt.toISOString();
 });
 
+// Customize the toJSON output
 TopicSchema.set('toJSON', {
   virtuals: true, // Include virtuals (like createdAtISO and updatedAtISO) in JSON output
   transform: (_, ret) => {
