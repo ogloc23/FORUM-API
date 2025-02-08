@@ -4,7 +4,7 @@ import generateSlug from '../utils/slug.js';  // Import the slugify function
 const TopicSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
-    slug: { type: String, unique: true }, // No need for the 'slug' plugin
+    slug: { type: String, unique: true }, // Slug should be generated before saving
     description: { type: String, required: true },
     course: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', required: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -13,6 +13,14 @@ const TopicSchema = new mongoose.Schema(
   },
   { timestamps: true } // Automatically creates createdAt & updatedAt
 );
+
+// **Pre-save hook to generate slug**
+TopicSchema.pre('save', function (next) {
+  if (this.isModified('title')) {
+    this.slug = generateSlug(this.title);
+  }
+  next();
+});
 
 // Virtuals to return ISO format dates
 TopicSchema.virtual('createdAtISO').get(function () {
@@ -25,7 +33,7 @@ TopicSchema.virtual('updatedAtISO').get(function () {
 
 // Customize the toJSON output
 TopicSchema.set('toJSON', {
-  virtuals: true, // Include virtuals (like createdAtISO and updatedAtISO) in JSON output
+  virtuals: true,
   transform: (_, ret) => {
     ret.id = ret._id.toString();
     ret.course = ret.course?.toString();

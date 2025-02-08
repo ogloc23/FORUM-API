@@ -13,16 +13,17 @@ export const typeDefs = gql`
     user: User!
   }
 
-  
-
   type Course {
-    id: ID!
-    title: String!
-    slug: String!
-    description: String!
-    createdAt: String!
-    updatedAt: String!
-  }
+  id: ID!
+  title: String!
+  slug: String!
+  description: String!
+  createdAt: String!
+  updatedAt: String!
+  topicCount: Int! # Total number of topics under this course
+  latestTopic: Topic # The latest created topic under this course
+  topics: [Topic!]!
+}
 
   type Topic {
     id: ID!
@@ -72,7 +73,7 @@ export const typeDefs = gql`
     getAllCourses: [Course]
     getCourseById(id: ID!): Course
     getCourseBySlug(slug: String!): Course
-    getTopicsByCourse(courseId: ID!): [Topic]
+     getTopicsByCourse(courseId: ID!, first: Int, after: String): [Topic]
     getCommentsByTopic(topicId: ID!): [Comment]
     getRepliesByComment(commentId: ID!): [Reply]
   }

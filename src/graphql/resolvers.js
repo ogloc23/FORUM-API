@@ -6,7 +6,7 @@ import Comment from '../models/Comment.js';
 import Reply from '../models/Reply.js';
 import { generateToken } from '../utils/auth.js';
 import { sendEmail } from '../utils/email.js';
-import generateSlug from '../utils/slug.js';  
+import generateSlug from "../utils/slug.js"; // Ensure slug utility is imported
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 
@@ -24,12 +24,38 @@ export const resolvers = {
     getCourseById: async (_, { id }) => {
       return await Course.findById(id);
     },
-    getCourseBySlug: async (_, { slug }) => {
-      return await Course.findOne({ slug });
-    },
-    // Define the topic query resolver function
+     // Define the topic query resolver function
     topics: async () => {
       return await Topic();
+    },
+
+    getCourseBySlug: async (_, { slug }) => {
+      const course = await Course.findOne({ slug });
+    
+      if (!course) {
+        throw new Error('Course not found');
+      }
+    
+      // Get topics under this course
+      const topics = await Topic.find({ course: course._id }).sort({ createdAt: -1 });
+    
+      return {
+        id: course._id.toString(),
+        title: course.title,
+        slug: course.slug,
+        description: course.description,
+        createdAt: course.createdAt.toISOString(),
+        updatedAt: course.updatedAt.toISOString(),
+        topicCount: topics.length, // ✅ Number of topics under the course
+        latestTopic: topics.length > 0 ? {
+          id: topics[0]._id.toString(),
+          title: topics[0].title,
+          slug: topics[0].slug,
+          description: topics[0].description,
+          createdAt: topics[0].createdAt.toISOString(),
+          updatedAt: topics[0].updatedAt.toISOString(),
+        } : null // ✅ If no topics exist, return null
+      };
     },
 
     getTopicById: async (_, { id }) => {
@@ -127,26 +153,31 @@ export const resolvers = {
         slug: topic.slug,
         title: topic.title,
         description: topic.description,
+        views: topic.views,
+        createdAt: topic.createdAt.toISOString(),
+        updatedAt: topic.updatedAt.toISOString(),
+    
         createdBy: topic.createdBy
           ? {
-              id: topic.createdBy._id.toString(), // ✅ Ensure ID is included
+              id: topic.createdBy._id.toString(),
               username: topic.createdBy.username,
               email: topic.createdBy.email,
             }
           : null, // Handle missing user
     
         comments: topic.comments.map(comment => ({
+          id: comment._id.toString(),
           text: comment.text,
           createdBy: comment.createdBy
             ? {
-                id: comment.createdBy._id.toString(), // ✅ Ensure ID is included
+                id: comment.createdBy._id.toString(),
                 username: comment.createdBy.username,
+                email: comment.createdBy.email,
               }
-            : null // Handle missing user
-        }))
+            : null, // Handle missing user
+        })),
       };
     },
-  
     
     getTopicsByCourse: async (_, { courseId }) => {
       const topics = await Topic.find({ course: courseId })
@@ -321,57 +352,68 @@ export const resolvers = {
       return { message: 'Password reset successful' };
     },
 
+  
 
-    createTopic : async (_, { courseId, title, description }, { user }) => {
-      // Check if user is authenticated
-      if (!user || !user.userId) {
-        throw new Error('Not authenticated');
-      }
-    
-      // Find the course by ID
-      const course = await Course.findById(courseId);
-      if (!course) {
-        throw new Error('Course not found');
-      }
-    
-      // Generate the slug from the title
-      const slug = generateSlug(title);
-    
-      // Create the new topic
-      const topic = new Topic({
-        title,
-        slug,  // Assign the generated slug here
-        description,
-        course: courseId,
-        createdBy: user.userId,
-      });
-    
-      // Save the topic to the database
-      const savedTopic = await topic.save();
-      await savedTopic.populate('createdBy', 'username email');
-    
-      // Convert to plain object and handle the date conversion
-      const topicData = savedTopic.toObject();
-      topicData.createdAt = topicData.createdAt.toISOString();
-      topicData.updatedAt = topicData.updatedAt.toISOString();
-    
-      return {
-        id: topicData._id.toString(),
-        title: topicData.title,
-        description: topicData.description,
-        slug: topicData.slug,  // Include the slug in the response
-        course: topicData.course.toString(),
-        createdBy: {
-          id: topicData.createdBy._id.toString(),
-          username: topicData.createdBy.username,
-          email: topicData.createdBy.email,
-        },
-        createdAt: topicData.createdAt,
-        updatedAt: topicData.updatedAt,
-      };
+createTopic : async (_, { courseId, title, description }, { user }) => {
+  if (!user || !user.userId) {
+    throw new Error("Not authenticated");
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(courseId)) {
+    throw new Error("Invalid Course ID");
+  }
+
+  const courseObjectId = new mongoose.Types.ObjectId(courseId);
+
+  // Check if the course exists
+  const course = await Course.findById(courseObjectId);
+  if (!course) {
+    throw new Error("Course not found");
+  }
+
+  // Create and save the new topic
+  const topic = new Topic({
+    title,
+    description,
+    slug: generateSlug(title),
+    course: courseObjectId,
+    createdBy: user.userId,
+  });
+
+  const savedTopic = await topic.save();
+  await savedTopic.populate("createdBy", "username email");
+
+  // ✅ Ensure topic ID is properly formatted as ObjectId
+  const updatedCourse = await Course.findByIdAndUpdate(
+    courseObjectId,
+    { $push: { topics: new mongoose.Types.ObjectId(savedTopic._id) } },
+    { new: true }
+  );
+
+  console.log("Updated Course Topics:", updatedCourse?.topics || "Not Updated");
+
+  if (!updatedCourse) {
+    throw new Error("Failed to update course with new topic.");
+  }
+
+  return {
+    id: savedTopic._id.toString(),
+    title: savedTopic.title,
+    description: savedTopic.description,
+    slug: savedTopic.slug,
+    course: savedTopic.course.toString(),
+    createdBy: {
+      id: savedTopic.createdBy._id.toString(),
+      username: savedTopic.createdBy.username,
+      email: savedTopic.createdBy.email,
     },
+    createdAt: savedTopic.createdAt.toISOString(),
+    updatedAt: savedTopic.updatedAt.toISOString(),
+  };
+},
+
     
-    
+
 
     createComment: async (_, { topicId, text }, { user }) => {
       if (!user || !user.userId) {
