@@ -2,6 +2,14 @@ import mongoose from 'mongoose';
 
 // User Schema definition
 const UserSchema = new mongoose.Schema({
+  firstName: {  // ✅ Now at the top and required
+    type: String,
+    required: true,
+  },
+  lastName: {  // ✅ Now at the top and required
+    type: String,
+    required: true,
+  },
   username: {
     type: String,
     required: true,

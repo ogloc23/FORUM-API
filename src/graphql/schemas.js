@@ -5,6 +5,8 @@ export const typeDefs = gql`
   type User {
     id: ID!
     username: String!
+    firstName: String!
+    lastName: String!
     email: String!
   }
 
@@ -14,16 +16,26 @@ export const typeDefs = gql`
   }
 
   type Course {
-  id: ID!
-  title: String!
-  slug: String!
-  description: String!
-  createdAt: String!
-  updatedAt: String!
-  topicCount: Int! # Total number of topics under this course
-  latestTopic: Topic # The latest created topic under this course
-  topics: [Topic!]!
-}
+    id: ID!
+    title: String!
+    slug: String!
+    description: String!
+    createdAt: String!
+    updatedAt: String!
+    topicCount: Int!
+    latestTopic: Topic
+  }
+
+  type CourseEdge {
+    node: Course!
+    cursor: ID!
+  }
+
+  type CourseConnection {
+    edges: [CourseEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int!
+  }
 
   type Topic {
     id: ID!
@@ -40,46 +52,65 @@ export const typeDefs = gql`
     updatedAt: String!
   }
 
+  type TopicEdge {
+    node: Topic!
+    cursor: ID!
+  }
+
+  type TopicConnection {
+    edges: [TopicEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int!
+  }
+
   type Comment { 
-  id: ID!
-  text: String!
-  createdBy: User!
-  topic: Topic!
-  likes: [User]!
-  replies: [Reply]!
-  createdAt: String!
-  updatedAt: String!
- }
+    id: ID!
+    text: String!
+    createdBy: User!
+    topic: Topic!
+    likes: [User!]! # ✅ Ensures likes is always an array, not nullable
+    replies: [Reply!]! # ✅ Ensures replies is always an array, not nullable
+    createdAt: String
+    updatedAt: String!
+  }
 
- type Reply {
-  id: ID!
-  text: String!
-  createdBy: User!
-  comment: Comment!
-  likes: [User]!
-  createdAt: String!
-  updatedAt: String!
- }
+  type Reply {
+    id: ID!
+    text: String!
+    createdBy: User! # ✅ Ensures createdBy is never null
+    comment: Comment!
+    likes: [User!]! # ✅ Ensures likes is always an array, not nullable
+    createdAt: String!
+    updatedAt: String!
+  }
 
- type Message {
-  message: String!}
+  type PageInfo {
+    hasNextPage: Boolean!
+    hasPreviousPage: Boolean!
+    endCursor: ID
+    startCursor: ID
+  }
+
+  type Message {
+    message: String!
+  }
 
   type Query {
     topics: [Topic]
     getTopicById(id: ID!): Topic
-    getTopicBySlug(slug: String!): Topic 
+    getTopicBySlug(slug: String!): Topic
     getAllUsers: [User!]!
     getUserProfile(id: ID!): User
-    getAllCourses: [Course]
+    getAllCourses(first: Int, after: ID, last: Int, before: ID): CourseConnection!
     getCourseById(id: ID!): Course
     getCourseBySlug(slug: String!): Course
-     getTopicsByCourse(courseId: ID!, first: Int, after: String): [Topic]
-    getCommentsByTopic(topicId: ID!): [Comment]
-    getRepliesByComment(commentId: ID!): [Reply]
+    getTopicsByCourse(courseId: ID!, first: Int, after: ID, last: Int, before: ID): TopicConnection!
+    getCommentsByTopic(topicId: ID!): [Comment!]!
+    getRepliesByComment(commentId: ID!): [Reply!]!
   }
 
   type Mutation {
-    register(username: String!, email: String!, password: String!): AuthPayload!
+    register(username: String!, firstName: String!, lastName: String!, email: String!, password: String!): AuthPayload!
     login(email: String!, password: String!): AuthPayload!
     createTopic(courseId: ID!, title: String!, description: String!): Topic!
     createComment(topicId: ID!, text: String!): Comment!

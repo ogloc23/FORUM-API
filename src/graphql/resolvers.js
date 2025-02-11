@@ -18,15 +18,72 @@ export const resolvers = {
     getUserProfile: async (_, { id }) => {
       return await User.findById(id);
     },
-    getAllCourses: async () => {
-      return await Course.find();
-    },
+    // getAllCourses: async () => {
+    //   return await Course.find();
+    // },
     getCourseById: async (_, { id }) => {
       return await Course.findById(id);
     },
      // Define the topic query resolver function
     topics: async () => {
       return await Topic();
+    },
+
+    getAllCourses: async (_, { first, after, last, before }) => {
+      let query = {};
+      let sortOrder = -1; // Newest courses first
+    
+      // Handle forward pagination (first + after)
+      if (first) {
+        if (after) {
+          const afterCourse = await Course.findById(after);
+          if (afterCourse) {
+            query.createdAt = { $lt: afterCourse.createdAt }; // Get newer courses
+          }
+        }
+        sortOrder = -1; // Newest first
+      }
+    
+      // Handle backward pagination (last + before)
+      if (last) {
+        if (before) {
+          const beforeCourse = await Course.findById(before);
+          if (beforeCourse) {
+            query.createdAt = { $gt: beforeCourse.createdAt }; // Get older courses
+          }
+        }
+        sortOrder = 1; // Oldest first (so we reverse later)
+      }
+    
+      // Fetch courses
+      let courses = await Course.find(query)
+        .sort({ createdAt: sortOrder }) // Sorting based on pagination direction
+        .limit((first || last) + 1); // Fetch one extra for pagination check
+    
+      const hasNextPage = first ? courses.length > first : false;
+      const hasPreviousPage = last ? courses.length > last : false;
+    
+      if (last) {
+        courses = courses.reverse().slice(0, last); // Reverse for correct order
+      } else {
+        courses = courses.slice(0, first);
+      }
+    
+      return {
+        edges: courses.map(course => ({
+          node: {
+            id: course._id.toString(),
+            title: course.title,
+            description: course.description,
+          }
+        })),
+        pageInfo: {
+          hasNextPage,
+          hasPreviousPage,
+          startCursor: courses.length ? courses[0]._id.toString() : null,
+          endCursor: courses.length ? courses[courses.length - 1]._id.toString() : null,
+        },
+      };
     },
 
     getCourseBySlug: async (_, { slug }) => {
@@ -60,22 +117,24 @@ export const resolvers = {
 
     getTopicById: async (_, { id }) => {
       const topic = await Topic.findById(id)
-        .populate('createdBy', '_id username email')
+        .populate('createdBy', '_id firstName lastName username email')
         .populate({
           path: 'comments',
           populate: [
-            { path: 'createdBy', select: '_id username email' },
             {
-              path: 'likes',
-              select: '_id username email',
-              match: { _id: { $ne: null } }, // Exclude null likes
+              path: 'createdBy',
+              select: '_id firstName lastName username email',
             },
             {
               path: 'replies',
-              populate: { path: 'createdBy', select: '_id username email' },
+              populate: {
+                path: 'createdBy',
+                select: '_id firstName lastName username email',
+              },
             },
           ],
-        });
+        })
+        .lean();
     
       if (!topic) {
         throw new Error('Topic not found');
@@ -85,69 +144,74 @@ export const resolvers = {
         id: topic._id.toString(),
         title: topic.title,
         description: topic.description,
+        createdAt: topic.createdAt ? topic.createdAt.toISOString() : new Date().toISOString(),
+        updatedAt: topic.updatedAt ? topic.updatedAt.toISOString() : new Date().toISOString(),
         createdBy: topic.createdBy
           ? {
               id: topic.createdBy._id.toString(),
+              firstName: topic.createdBy.firstName,
+              lastName: topic.createdBy.lastName,
               username: topic.createdBy.username,
               email: topic.createdBy.email,
             }
-          : { id: "UNKNOWN", username: "Deleted User", email: "" }, // ✅ Prevents null errors
-    
-        comments: topic.comments.map(comment => ({
+          : null,
+        comments: topic.comments?.map(comment => ({
           id: comment._id.toString(),
           text: comment.text,
+          createdAt: comment.createdAt ? comment.createdAt.toISOString() : new Date().toISOString(),
+          updatedAt: comment.updatedAt ? comment.updatedAt.toISOString() : new Date().toISOString(),
           createdBy: comment.createdBy
             ? {
                 id: comment.createdBy._id.toString(),
+                firstName: comment.createdBy.firstName,
+                lastName: comment.createdBy.lastName,
                 username: comment.createdBy.username,
                 email: comment.createdBy.email,
               }
-            : { id: "UNKNOWN", username: "Deleted User", email: "" }, // ✅ Prevents null errors
-    
-          likes: comment.likes
-            .map(user => (user ? user._id.toString() : null))
-            .filter(Boolean), // ✅ Ensures only valid users
-    
-          createdAt: comment.createdAt.toISOString(),
-          updatedAt: comment.updatedAt.toISOString(),
-          replies: comment.replies.map(reply => ({
+            : null,
+          likes: comment.likes?.length ? comment.likes.map(like => like.toString()) : [],
+          replies: comment.replies?.map(reply => ({
             id: reply._id.toString(),
             text: reply.text,
+            createdAt: reply.createdAt ? reply.createdAt.toISOString() : new Date().toISOString(),
+            updatedAt: reply.updatedAt ? reply.updatedAt.toISOString() : new Date().toISOString(),
             createdBy: reply.createdBy
               ? {
                   id: reply.createdBy._id.toString(),
+                  firstName: reply.createdBy.firstName,
+                  lastName: reply.createdBy.lastName,
                   username: reply.createdBy.username,
                   email: reply.createdBy.email,
                 }
-              : { id: "UNKNOWN", username: "Deleted User", email: "" }, // ✅ Prevents null errors
-            createdAt: reply.createdAt.toISOString(),
-            updatedAt: reply.updatedAt.toISOString(),
-          })),
-        })),
+              : null,
+            likes: reply.likes?.length ? reply.likes.map(like => like.toString()) : [],
+          })) || [],
+        })) || [],
     
-        commentCount: topic.comments.length || 0, // ✅ Always return an integer
-        likesCount: topic.comments.reduce((acc, comment) => acc + (comment.likes?.length || 0), 0),
-        views: topic.views || 0,
-        createdAt: topic.createdAt.toISOString(),
-        updatedAt: topic.updatedAt.toISOString(),
+        commentCount: topic.comments ? topic.comments.length : 0, // ✅ Ensures commentCount is always an integer
+        likesCount: topic.likesCount ?? 0, // ✅ Ensures likesCount is always an integer
+        views: topic.views ?? 0, // ✅ Ensures views is always an integer
       };
     },
+    
+    
+    
 
     getTopicBySlug: async (_, { slug }) => {
       const topic = await Topic.findOne({ slug })
-        .populate('createdBy', '_id username email') // ✅ Ensure `_id` is selected
+        .populate('createdBy', '_id firstName lastName username email')
         .populate({
           path: 'comments',
           populate: {
             path: 'createdBy',
-            select: '_id username email', // ✅ Explicitly request `_id`
-          }
+            select: '_id firstName lastName username email',
+          },
         });
-    
+
       if (!topic) {
         throw new Error('Topic not found');
       }
-    
+
       return {
         id: topic._id.toString(),
         slug: topic.slug,
@@ -156,54 +220,86 @@ export const resolvers = {
         views: topic.views,
         createdAt: topic.createdAt.toISOString(),
         updatedAt: topic.updatedAt.toISOString(),
-    
         createdBy: topic.createdBy
           ? {
               id: topic.createdBy._id.toString(),
+              firstName: topic.createdBy.firstName,
+              lastName: topic.createdBy.lastName,
               username: topic.createdBy.username,
               email: topic.createdBy.email,
             }
-          : null, // Handle missing user
-    
+          : null,
         comments: topic.comments.map(comment => ({
           id: comment._id.toString(),
           text: comment.text,
           createdBy: comment.createdBy
             ? {
                 id: comment.createdBy._id.toString(),
+                firstName: comment.createdBy.firstName,
+                lastName: comment.createdBy.lastName,
                 username: comment.createdBy.username,
                 email: comment.createdBy.email,
               }
-            : null, // Handle missing user
+            : null,
         })),
       };
     },
     
-    getTopicsByCourse: async (_, { courseId }) => {
-      const topics = await Topic.find({ course: courseId })
-        .populate('createdBy', '_id username email') // Ensure population
-        .exec();
+
+    getTopicsByCourse: async (_, { courseId, first, after }) => {
+      const query = { course: courseId };
     
-      return topics.map(topic => ({
-        id: topic._id.toString(),
-        title: topic.title,
-        description: topic.description,
-        course: topic.course.toString(),
-        createdBy: topic.createdBy
-          ? {
-              id: topic.createdBy._id.toString(),
-              username: topic.createdBy.username,
-              email: topic.createdBy.email,
-            }
-          : null, // Prevents the error if no user is found
-        comments: topic.comments || [],
-        createdAt: topic.createdAt.toISOString(),
-        updatedAt: topic.updatedAt.toISOString(),
+      if (after) {
+        const afterTopic = await Topic.findById(after);
+        if (afterTopic) {
+          query.createdAt = { $lt: afterTopic.createdAt };
+        }
+      }
+    
+      const totalCount = await Topic.countDocuments(query); // ✅ Get total count
+    
+      const topics = await Topic.find(query)
+        .sort({ createdAt: -1 }) // Newest topics first
+        .limit(first + 1)
+        .populate('createdBy', '_id firstName lastName username email')
+        .lean();
+    
+      const hasNextPage = topics.length > first;
+      const edges = topics.slice(0, first).map(topic => ({
+        node: {
+          id: topic._id.toString(),
+          title: topic.title,
+          description: topic.description,
+          createdAt: topic.createdAt ? topic.createdAt.toISOString() : new Date().toISOString(), // ✅ Ensure valid date
+          updatedAt: topic.updatedAt ? topic.updatedAt.toISOString() : new Date().toISOString(), // ✅ Ensure valid date
+          likesCount: topic.likesCount ?? 0, // ✅ Ensure a default value
+          views: topic.views ?? 0, // ✅ Ensure a default value
+          commentCount: topic.commentCount ?? 0, // ✅ Ensure a default value
+          createdBy: topic.createdBy
+            ? {
+                id: topic.createdBy._id.toString(),
+                firstName: topic.createdBy.firstName,
+                lastName: topic.createdBy.lastName,
+                username: topic.createdBy.username,
+                email: topic.createdBy.email,
+              }
+            : null,
+        },
+        cursor: topic._id.toString(), // ✅ Cursor for pagination
       }));
+    
+      return {
+        totalCount,
+        edges,
+        pageInfo: {
+          hasNextPage,
+          endCursor: hasNextPage ? topics[first]._id.toString() : null,
+        },
+      };
     },
     
-  
-    // 
+    
+
     getCommentsByTopic: async (_, { topicId }) => {
       const comments = await Comment.find({ topic: topicId })
         .populate('createdBy', 'username email')
@@ -235,8 +331,6 @@ export const resolvers = {
         updatedAt: comment.updatedAt?.toISOString() || new Date().toISOString(), // ✅ Ensure fallback value
       }));
     },
-    
-  
   
     getRepliesByComment: async (_, { commentId }) => {
       const replies = await Reply.find({ comment: commentId })
@@ -251,48 +345,70 @@ export const resolvers = {
       }));
     },
 
-    topics : async () => {
+    // topics: async () => {
+    //   const topicsList = await Topic.find()
+    //     .sort({ createdAt: -1 }) // ✅ Sort in descending order (latest first)
+    //     .populate('course', 'title') 
+    //     .populate('createdBy', 'username') 
+    //     .populate({
+    //       path: 'comments',
+    //       select: 'text likes createdBy',
+    //       populate: { path: 'createdBy', select: 'username' },
+    //     })
+    //     .lean(); 
+    
+    //   return topicsList.map(topic => ({
+    //     ...topic,
+    //     commentCount: topic.comments.length,
+    //     likesCount: topic.comments.reduce((acc, comment) => acc + comment.likes.length, 0),
+    //   }));
+    // },
+
+    topics: async () => {
       const topicsList = await Topic.find()
-        .populate('course', 'title') // Populate course title
-        .populate('createdBy', 'username') // Populate creator details
+        .sort({ createdAt: -1 }) // ✅ Always get newest topics first
+        .populate('course', 'title')
+        .populate('createdBy', 'username')
         .populate({
           path: 'comments',
-          select: 'text likes createdBy', // Select the relevant fields for comments
-          populate: {
-            path: 'createdBy',
-            select: 'username',
-          },
+          select: 'text likes createdBy',
+          populate: { path: 'createdBy', select: 'username' },
         })
-        .lean(); // Use lean to return plain objects instead of Mongoose documents
+        .lean(); 
     
-      return topicsList.map(topic => {
-        topic.commentCount = topic.comments.length;
-        topic.likesCount = topic.comments.reduce((acc, comment) => acc + comment.likes.length, 0); // Count total likes on comments
-        return topic;
-      });
+      return topicsList.map(topic => ({
+        ...topic,
+        commentCount: topic.comments.length,
+        likesCount: topic.comments.reduce((acc, comment) => acc + comment.likes.length, 0),
+      }));
     },
+    
   },
 
   Mutation: {
 
     // REGISTER MUTATION RESOLVER FUNCTION
-    register: async (_, { username, email, password }) => {
+    register: async (_, { firstName, lastName, username, email, password }) => {
       const existingUser = await User.findOne({ email });
       if (existingUser) {
         throw new Error('User already exists');
       }
+      
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
+      
       const user = new User({
+        firstName,  // ✅ Now required
+        lastName,   // ✅ Now required
         username,
         email,
         password: hashedPassword,
       });
+      
       await user.save();
-      return {
-        user,
-      };
+      return { user };
     },
+    
 
 
     // LOGIN MUTATION RESOLVER FUNCTION
@@ -354,64 +470,124 @@ export const resolvers = {
 
   
 
-createTopic : async (_, { courseId, title, description }, { user }) => {
-  if (!user || !user.userId) {
-    throw new Error("Not authenticated");
-  }
+    // createTopic: async (_, { courseId, title, description }, { user }) => {
+    //   if (!user || !user.userId) {
+    //     throw new Error("Not authenticated");
+    //   }
+    
+    //   if (!mongoose.Types.ObjectId.isValid(courseId)) {
+    //     throw new Error("Invalid Course ID");
+    //   }
+    
+    //   const courseObjectId = new mongoose.Types.ObjectId(courseId);
+    
+    //   // Check if the course exists
+    //   const course = await Course.findById(courseObjectId);
+    //   if (!course) {
+    //     throw new Error("Course not found");
+    //   }
+    
+    //   // Create and save the new topic
+    //   const topic = new Topic({
+    //     title,
+    //     description,
+    //     slug: generateSlug(title),
+    //     course: courseObjectId,
+    //     createdBy: user.userId,
+    //     createdAt: new Date(), // ✅ Explicitly setting createdAt
+    //   });
+    
+    //   let savedTopic = await topic.save();
+    
+    //   // Populate creator details
+    //   savedTopic = await Topic.findById(savedTopic._id)
+    //     .populate("createdBy", "username email")
+    //     .lean(); // ✅ Convert to a plain object for better performance
+    
+    //   // ✅ Ensure the topic is added at the TOP of the course's topic list
+    //   const updatedCourse = await Course.findByIdAndUpdate(
+    //     courseObjectId,
+    //     { $push: { topics: { $each: [savedTopic._id], $position: 0 } } }, // ✅ Push new topics to the beginning
+    //     { new: true }
+    //   );
+    
+    //   console.log("Updated Course Topics:", updatedCourse?.topics || "Not Updated");
+    
+    //   if (!updatedCourse) {
+    //     throw new Error("Failed to update course with new topic.");
+    //   }
+    
+    //   return {
+    //     id: savedTopic._id.toString(),
+    //     title: savedTopic.title,
+    //     description: savedTopic.description,
+    //     slug: savedTopic.slug,
+    //     course: savedTopic.course.toString(),
+    //     createdBy: {
+    //       id: savedTopic.createdBy._id.toString(),
+    //       username: savedTopic.createdBy.username,
+    //       email: savedTopic.createdBy.email,
+    //     },
+    //     createdAt: savedTopic.createdAt.toISOString(),
+    //     updatedAt: savedTopic.updatedAt.toISOString(),
+    //   };
+    // },    
 
-  if (!mongoose.Types.ObjectId.isValid(courseId)) {
-    throw new Error("Invalid Course ID");
-  }
-
-  const courseObjectId = new mongoose.Types.ObjectId(courseId);
-
-  // Check if the course exists
-  const course = await Course.findById(courseObjectId);
-  if (!course) {
-    throw new Error("Course not found");
-  }
-
-  // Create and save the new topic
-  const topic = new Topic({
-    title,
-    description,
-    slug: generateSlug(title),
-    course: courseObjectId,
-    createdBy: user.userId,
-  });
-
-  const savedTopic = await topic.save();
-  await savedTopic.populate("createdBy", "username email");
-
-  // ✅ Ensure topic ID is properly formatted as ObjectId
-  const updatedCourse = await Course.findByIdAndUpdate(
-    courseObjectId,
-    { $push: { topics: new mongoose.Types.ObjectId(savedTopic._id) } },
-    { new: true }
-  );
-
-  console.log("Updated Course Topics:", updatedCourse?.topics || "Not Updated");
-
-  if (!updatedCourse) {
-    throw new Error("Failed to update course with new topic.");
-  }
-
-  return {
-    id: savedTopic._id.toString(),
-    title: savedTopic.title,
-    description: savedTopic.description,
-    slug: savedTopic.slug,
-    course: savedTopic.course.toString(),
-    createdBy: {
-      id: savedTopic.createdBy._id.toString(),
-      username: savedTopic.createdBy.username,
-      email: savedTopic.createdBy.email,
+    createTopic: async (_, { courseId, title, description }, { user }) => {
+      if (!user || !user.userId) {
+        throw new Error("Not authenticated");
+      }
+    
+      if (!mongoose.Types.ObjectId.isValid(courseId)) {
+        throw new Error("Invalid Course ID");
+      }
+    
+      const courseObjectId = new mongoose.Types.ObjectId(courseId);
+    
+      // Check if the course exists
+      const course = await Course.findById(courseObjectId);
+      if (!course) {
+        throw new Error("Course not found");
+      }
+    
+      // Create and save the new topic (Mongoose handles createdAt)
+      const topic = new Topic({
+        title,
+        description,
+        slug: generateSlug(title),
+        course: courseObjectId,
+        createdBy: user.userId,
+      });
+    
+      let savedTopic = await topic.save();
+    
+      // Populate creator details
+      savedTopic = await Topic.findById(savedTopic._id)
+        .populate("createdBy", "username email")
+        .lean();
+    
+      // ✅ Ensure topic appears at the TOP in database queries
+      await Course.findByIdAndUpdate(
+        courseObjectId,
+        { $push: { topics: savedTopic._id } }, // No need for $position
+        { new: true }
+      );
+    
+      return {
+        id: savedTopic._id.toString(),
+        title: savedTopic.title,
+        description: savedTopic.description,
+        slug: savedTopic.slug,
+        course: savedTopic.course.toString(),
+        createdBy: {
+          id: savedTopic.createdBy._id.toString(),
+          username: savedTopic.createdBy.username,
+          email: savedTopic.createdBy.email,
+        },
+        createdAt: savedTopic.createdAt.toISOString(),
+        updatedAt: savedTopic.updatedAt.toISOString(),
+      };
     },
-    createdAt: savedTopic.createdAt.toISOString(),
-    updatedAt: savedTopic.updatedAt.toISOString(),
-  };
-},
-
     
 
 
