@@ -69,89 +69,259 @@ export const resolvers = {
       }));
     },
   
+    
+    
     getCourseBySlug: async (_, { slug }) => {
-      const course = await Course.findOne({ slug }).lean();
-      if (!course) throw new Error('Course not found');
-      return course;
+      try {
+        const course = await Course.findOne({ slug }).lean();
+        if (!course) {
+          throw new Error(`Course not found with slug: ${slug}`);
+        }
+    
+        // Get topic count
+        const topicCount = await Topic.countDocuments({ course: course._id }) || 0;
+    
+        // Fetch the latest topic
+        const latestTopic = await Topic.findOne({ course: course._id })
+          .sort({ createdAt: -1 }) // Get the most recent topic
+          .select("_id title slug description createdAt updatedAt") // Ensure updatedAt is selected
+          .lean();
+    
+        return {
+          ...course,
+          id: course._id.toString(),
+          topicCount,
+          latestTopic: latestTopic
+            ? {
+                id: latestTopic._id.toString(),
+                title: latestTopic.title || "Untitled", // Ensure title is not null
+                slug: latestTopic.slug || `topic-${latestTopic._id}`, // Ensure slug is not null
+                description: latestTopic.description || "No description available.", // Provide a default description
+                createdAt: latestTopic.createdAt,
+                updatedAt: latestTopic.updatedAt || latestTopic.createdAt, // Ensure updatedAt is not null
+              }
+            : null, // Explicitly return null if no topics exist
+        };
+      } catch (error) {
+        console.error("Error fetching course:", error);
+        throw new Error(`Could not fetch course: ${error.message}`);
+      }
     },
   
     getTopicById: async (_, { id }) => {
-      const topic = await Topic.findById(id)
-        .populate('createdBy', '_id firstName lastName username email')
+      try {
+        const topic = await Topic.findById(id)
+          .populate({
+            path: "createdBy",
+            select: "id username email",
+          })
+          .populate({
+            path: "comments",
+            populate: [
+              { path: "createdBy", select: "id username email" },
+              { path: "likes", select: "id username email" },
+              {
+                path: "replies",
+                populate: [
+                  { path: "createdBy", select: "id username email" },
+                  { path: "likes", select: "id username email" },
+                ],
+              },
+            ],
+          })
+          .lean();
+    
+        if (!topic) {
+          throw new Error(`Topic not found with id: ${id}`);
+        }
+    
+        // Ensure createdBy exists
+        if (!topic.createdBy || !topic.createdBy.username) {
+          throw new Error("Topic creator is missing or invalid.");
+        }
+    
+        // Process comments, replies, and likes safely
+        const processUser = (user) =>
+          user
+            ? {
+                id: user._id.toString(),
+                username: user.username || "Unknown",
+                email: user.email || "no-email@example.com",
+              }
+            : null;
+    
+        const processReplies = (replies) =>
+          replies?.map((reply) => ({
+            id: reply._id.toString(),
+            text: reply.text,
+            createdBy: processUser(reply.createdBy),
+            likes: reply.likes?.map(processUser) || [],
+            createdAt: reply.createdAt,
+            updatedAt: reply.updatedAt || reply.createdAt,
+          })) || [];
+    
+        const processComments = (comments) =>
+          comments?.map((comment) => ({
+            id: comment._id.toString(),
+            text: comment.text,
+            createdBy: processUser(comment.createdBy),
+            likes: comment.likes?.map(processUser) || [],
+            createdAt: comment.createdAt,
+            updatedAt: comment.updatedAt || comment.createdAt,
+            replies: processReplies(comment.replies),
+          })) || [];
+    
+        return {
+          id: topic._id.toString(),
+          title: topic.title || "Untitled",
+          description: topic.description || "No description available.",
+          createdBy: processUser(topic.createdBy),
+          comments: processComments(topic.comments),
+          commentCount: topic.comments?.length || 0,
+          likesCount: topic.likes?.length || 0,
+          views: topic.views || 0,
+          createdAt: topic.createdAt,
+          updatedAt: topic.updatedAt || topic.createdAt,
+        };
+      } catch (error) {
+        console.error("Error fetching topic:", error);
+        throw new Error(`Could not fetch topic: ${error.message}`);
+      }
+    },
+
+    getTopicByCourseId: async (_, { courseId }, { models }) => {
+      return await models.Topic.find({ courseId })
+        .populate("createdBy")
         .populate({
-          path: 'comments',
+          path: "comments",
           populate: [
-            { path: 'createdBy', select: '_id firstName lastName username email' },
-            { 
-              path: 'replies', 
-              populate: { path: 'createdBy', select: '_id firstName lastName username email' } 
+            { path: "createdBy" },
+            { path: "likes" },
+            {
+              path: "replies",
+              populate: [{ path: "createdBy" }, { path: "likes" }],
             },
           ],
-        })
-        .lean();
-  
-      if (!topic) throw new Error('Topic not found');
-      return topic;
+        });
     },
-  
+
+    getTopicByCourseSlug: async (_, { courseSlug }, { models }) => {
+      const course = await models.Course.findOne({ slug: courseSlug });
+
+      if (!course) {
+        throw new Error("Course not found");
+      }
+
+      return await models.Topic.find({ courseId: course.id })
+        .populate("createdBy")
+        .populate({
+          path: "comments",
+          populate: [
+            { path: "createdBy" },
+            { path: "likes" },
+            {
+              path: "replies",
+              populate: [{ path: "createdBy" }, { path: "likes" }],
+            },
+          ],
+        });
+    },
+    
+    
     getCommentsByTopic: async (_, { topicId }) => {
       try {
         const comments = await Comment.find({ topic: topicId })
           .populate({
-            path: 'createdBy', 
-            select: '_id firstName lastName username email',  // Ensure _id is selected for createdBy
-            model: 'User', // Ensure it's linking to the User model
+            path: "createdBy",
+            select: "_id firstName lastName username email",
+            model: "User",
           })
           .populate({
-            path: 'replies',
-            populate: { 
-              path: 'createdBy', 
-              select: '_id firstName lastName username email',
-              model: 'User', // Ensure it's linking to the User model for replies
+            path: "replies",
+            populate: {
+              path: "createdBy",
+              select: "_id firstName lastName username email",
+              model: "User",
             },
           })
-          .lean(); // .lean() for performance optimization
-        
+          .lean(); // Optimize performance
+    
         if (!comments || comments.length === 0) {
           throw new Error(`No comments found for topicId: ${topicId}`);
         }
     
-        // Ensure all comments have a valid createdBy field
-        comments.forEach(comment => {
-          if (!comment.createdBy || !comment.createdBy._id) {
-            console.error(`Comment with ID ${comment._id} does not have a valid createdBy field.`);
-            throw new Error(`Comment with ID ${comment._id} does not have a valid createdBy field.`);
-          }
-        });
-    
-        // Map and return the comments with their ids properly mapped
-        return comments.map(comment => ({
+        return comments.map((comment) => ({
           ...comment,
           id: comment._id.toString(),
-          replies: comment.replies.map(reply => ({
+          createdBy: comment.createdBy?._id
+            ? {
+                id: comment.createdBy._id.toString(),
+                firstName: comment.createdBy.firstName,
+                lastName: comment.createdBy.lastName,
+                username: comment.createdBy.username,
+                email: comment.createdBy.email,
+              }
+            : { id: null, firstName: "Deleted", lastName: "User", username: "", email: "" }, // Placeholder for deleted users
+          replies: comment.replies.map((reply) => ({
             ...reply,
-            id: reply._id.toString(), // Map ID for replies too
+            id: reply._id.toString(),
+            createdBy: reply.createdBy?._id
+              ? {
+                  id: reply.createdBy._id.toString(),
+                  firstName: reply.createdBy.firstName,
+                  lastName: reply.createdBy.lastName,
+                  username: reply.createdBy.username,
+                  email: reply.createdBy.email,
+                }
+              : { id: null, firstName: "Deleted", lastName: "User", username: "", email: "" }, // Handle missing reply authors
           })),
         }));
       } catch (error) {
-        console.error('Error fetching comments:', error.message);
+        console.error("Error fetching comments:", error);
         throw new Error(`Could not fetch comments: ${error.message}`);
       }
     },
   
+
     getRepliesByComment: async (_, { commentId }) => {
-      const replies = await Reply.find({ comment: commentId })
-        .populate('createdBy', '_id firstName lastName username email')
-        .lean();
-      
-      return replies.map(reply => ({
-        id: reply._id.toString(),
-        text: reply.text,
-        createdBy: reply.createdBy,
-        createdAt: reply.createdAt.toISOString(), 
-        updatedAt: reply.updatedAt.toISOString()  
-      }));
+      try {
+        const replies = await Reply.find({ comment: commentId })
+          .populate({
+            path: "createdBy",
+            select: "_id firstName lastName username email",
+            model: "User",
+          })
+          .lean(); // Optimize performance
+    
+        if (!replies || replies.length === 0) {
+          throw new Error(`No replies found for commentId: ${commentId}`);
+        }
+    
+        return replies.map((reply) => ({
+          ...reply,
+          id: reply._id.toString(),
+          createdBy: reply.createdBy?._id
+            ? {
+                id: reply.createdBy._id.toString(),
+                firstName: reply.createdBy.firstName,
+                lastName: reply.createdBy.lastName,
+                username: reply.createdBy.username,
+                email: reply.createdBy.email,
+              }
+            : { 
+                id: "deleted", // Placeholder ID
+                firstName: "Deleted",
+                lastName: "User",
+                username: "unknown",
+                email: "unknown@example.com"
+              }, // Handle missing user scenario
+        }));
+      } catch (error) {
+        console.error("Error fetching replies:", error);
+        throw new Error(`Could not fetch replies: ${error.message}`);
+      }
     },
+    
     
     topics: async () => {
       try {

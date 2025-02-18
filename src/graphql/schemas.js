@@ -74,7 +74,8 @@ export const typeDefs = gql`
     getAllCourses: [Course!]!
     getCourseById(id: ID!): Course
     getCourseBySlug(slug: String!): Course
-    getTopicsByCourse(courseId: ID!): [Topic!]!
+    getTopicByCourseId(courseId: ID!): [Topic!]!
+    getTopicByCourseSlug(courseSlug: String!): [Topic]
     getTopicById(id: ID!): Topic
     getTopicBySlug(slug: String!): Topic
     getCommentsByTopic(topicId: ID!): [Comment!]!
