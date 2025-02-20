@@ -188,43 +188,138 @@ export const resolvers = {
         throw new Error(`Could not fetch topic: ${error.message}`);
       }
     },
+   
 
-    getTopicByCourseId: async (_, { courseId }, { models }) => {
-      return await models.Topic.find({ courseId })
-        .populate("createdBy")
-        .populate({
-          path: "comments",
-          populate: [
-            { path: "createdBy" },
-            { path: "likes" },
-            {
-              path: "replies",
-              populate: [{ path: "createdBy" }, { path: "likes" }],
+    getTopicByCourseId : async (_, { courseId }) => {
+      try {
+        if (!mongoose.Types.ObjectId.isValid(courseId)) {
+          throw new Error(`Invalid course ID format: ${courseId}`);
+        }
+    
+        const topics = await Topic.find({ course: new mongoose.Types.ObjectId(courseId) })
+          .populate({
+            path: "createdBy",
+            select: "_id firstName lastName username email",
+          })
+          .populate({
+            path: "comments",
+            populate: [
+              {
+                path: "createdBy",
+                select: "_id username email",
+              },
+              {
+                path: "likes",
+                select: "_id username email",
+              },
+              {
+                path: "replies",
+                populate: [
+                  {
+                    path: "createdBy",
+                    select: "_id username email",
+                  },
+                  {
+                    path: "likes",
+                    select: "_id username email",
+                  },
+                ],
+              },
+            ],
+          })
+          .sort({ createdAt: -1 })
+          .lean();
+    
+        if (!topics.length) {
+          console.warn(`No topics found for course with ID: ${courseId}`);
+          return [];
+        }
+    
+        return topics
+          .filter(topic => topic.createdBy) // ✅ Exclude topics with deleted users
+          .map(topic => ({
+            ...topic,
+            id: topic._id.toString(),
+            createdBy: {
+              ...topic.createdBy,
+              id: topic.createdBy._id.toString(),
             },
-          ],
-        });
-    },
-
-    getTopicByCourseSlug: async (_, { courseSlug }, { models }) => {
-      const course = await models.Course.findOne({ slug: courseSlug });
-
-      if (!course) {
-        throw new Error("Course not found");
+            commentCount: topic.comments ? topic.comments.length : 0, // ✅ Ensure commentCount is always a number
+            likesCount: topic.likes ? topic.likes.length : 0, // ✅ Ensure likesCount is always a number
+            comments: topic.comments
+              ? topic.comments.map(comment => ({
+                  ...comment,
+                  id: comment._id.toString(),
+                  createdBy: comment.createdBy
+                    ? {
+                        ...comment.createdBy,
+                        id: comment.createdBy._id.toString(),
+                      }
+                    : null,
+                  likes: comment.likes
+                    ? comment.likes.map(like => ({
+                        ...like,
+                        id: like._id.toString(),
+                      }))
+                    : [],
+                  replies: comment.replies
+                    ? comment.replies.map(reply => ({
+                        ...reply,
+                        id: reply._id.toString(),
+                        createdBy: reply.createdBy
+                          ? {
+                              ...reply.createdBy,
+                              id: reply.createdBy._id.toString(),
+                            }
+                          : null,
+                        likes: reply.likes
+                          ? reply.likes.map(like => ({
+                              ...like,
+                              id: like._id.toString(),
+                            }))
+                          : [],
+                      }))
+                    : [],
+                }))
+              : [],
+          }));
+      } catch (error) {
+        console.error("Error fetching topics by courseId:", error.message);
+        throw new Error(`Could not fetch topics: ${error.message}`);
       }
+    },
+    
 
-      return await models.Topic.find({ courseId: course.id })
-        .populate("createdBy")
-        .populate({
-          path: "comments",
-          populate: [
-            { path: "createdBy" },
-            { path: "likes" },
-            {
-              path: "replies",
-              populate: [{ path: "createdBy" }, { path: "likes" }],
-            },
-          ],
-        });
+
+
+    getTopicByCourseSlug: async (_, { courseSlug }) => {
+      try {
+        const course = await Course.findOne({ slug: courseSlug }).lean();
+    
+        if (!course) {
+          throw new Error(`Course with slug "${courseSlug}" not found.`);
+        }
+    
+        const topics = await Topic.find({ course: course._id })
+          .populate({
+            path: 'createdBy',
+            select: '_id firstName lastName username email',
+          })
+          .sort({ createdAt: -1 }) // ✅ Sort by newest topics first
+          .lean();
+    
+        if (!topics.length) {
+          throw new Error(`No topics found for course with slug: ${courseSlug}`);
+        }
+    
+        return topics.map(topic => ({
+          ...topic,
+          id: topic._id.toString(),
+        }));
+      } catch (error) {
+        console.error('Error fetching topics by courseSlug:', error.message);
+        throw new Error(`Could not fetch topics: ${error.message}`);
+      }
     },
     
     
