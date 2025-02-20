@@ -17,22 +17,13 @@ const CommentSchema = new mongoose.Schema(
       required: true,
     },
     likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    replies: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Reply' }],
-    createdAt: {
-      type: Date,
-      default: Date.now,
-      required: true,  // ✅ Ensures createdAt is always present
-    },
-    updatedAt: {
-      type: Date,
-      default: Date.now,
-      required: true,  // ✅ Ensures updatedAt is always present
-    },
+    replies: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Reply' }], // ✅ This remains an array of references
   },
   {
-    timestamps: true, // ✅ This auto-manages createdAt & updatedAt
+    timestamps: true,
   }
 );
+
 
 const Comment = mongoose.model('Comment', CommentSchema);
 

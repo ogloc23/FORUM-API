@@ -290,8 +290,93 @@ export const resolvers = {
     },
     
 
-
-
+    // getTopicByCourseSlug: async (_, { courseSlug }) => {
+    //   try {
+    //     const course = await Course.findOne({ slug: courseSlug }).lean();
+    
+    //     if (!course) {
+    //       throw new Error(`Course with slug "${courseSlug}" not found.`);
+    //     }
+    
+    //     const topics = await Topic.find({ course: course._id })
+    //       .populate({
+    //         path: 'createdBy',
+    //         select: '_id firstName lastName username email',
+    //       })
+    //       .populate({
+    //         path: 'comments',
+    //         populate: {
+    //           path: 'createdBy likes replies',
+    //           select: '_id username email',
+    //           populate: {
+    //             path: 'createdBy likes',
+    //             select: '_id username email',
+    //           },
+    //         },
+    //       })
+    //       .sort({ createdAt: -1 })
+    //       .lean();
+    
+    //     if (!topics.length) {
+    //       throw new Error(`No topics found for course with slug: ${courseSlug}`);
+    //     }
+    
+    //     return topics.map(topic => ({
+    //       ...topic,
+    //       id: topic._id.toString(),
+    //       commentCount: topic.comments ? topic.comments.length : 0, // ✅ Always return a number
+    //       likesCount: topic.likesCount ?? 0, // Ensure likesCount is set
+    //       views: topic.views ?? 0, // Ensure views is set
+    //       createdBy: topic.createdBy
+    //         ? {
+    //             id: topic.createdBy._id.toString(),
+    //             username: topic.createdBy.username || 'N/A',
+    //             email: topic.createdBy.email || 'N/A',
+    //           }
+    //         : {
+    //             id: 'unknown-user',
+    //             username: 'N/A',
+    //             email: 'N/A',
+    //           },
+    //       comments: topic.comments.map(comment => ({
+    //         ...comment,
+    //         id: comment._id.toString(),
+    //         createdBy: comment.createdBy
+    //           ? {
+    //               id: comment.createdBy._id.toString(),
+    //               username: comment.createdBy.username || 'N/A',
+    //               email: comment.createdBy.email || 'N/A',
+    //             }
+    //           : { id: 'unknown', username: 'N/A', email: 'N/A' },
+    //         likes: comment.likes?.map(user => ({
+    //           id: user._id.toString(),
+    //           username: user.username || 'N/A',
+    //           email: user.email || 'N/A',
+    //         })) || [],
+    //         replies: comment.replies?.map(reply => ({
+    //           ...reply,
+    //           id: reply._id.toString(),
+    //           createdBy: reply.createdBy
+    //             ? {
+    //                 id: reply.createdBy._id.toString(),
+    //                 username: reply.createdBy.username || 'N/A',
+    //                 email: reply.createdBy.email || 'N/A',
+    //               }
+    //             : { id: 'unknown', username: 'N/A', email: 'N/A' },
+    //           likes: reply.likes?.map(user => ({
+    //             id: user._id.toString(),
+    //             username: user.username || 'N/A',
+    //             email: user.email || 'N/A',
+    //           })) || [],
+    //         })) || [],
+    //       })),
+    //     }));
+    //   } catch (error) {
+    //     console.error('Error fetching topics by courseSlug:', error);
+    //     throw new Error(`Could not fetch topics: ${error.message}`);
+    //   }
+    // },
+    
     getTopicByCourseSlug: async (_, { courseSlug }) => {
       try {
         const course = await Course.findOne({ slug: courseSlug }).lean();
@@ -305,7 +390,33 @@ export const resolvers = {
             path: 'createdBy',
             select: '_id firstName lastName username email',
           })
-          .sort({ createdAt: -1 }) // ✅ Sort by newest topics first
+          .populate({
+            path: 'comments',
+            populate: [
+              {
+                path: 'createdBy',
+                select: '_id username email',
+              },
+              {
+                path: 'likes',
+                select: '_id username email',
+              },
+              {
+                path: 'replies',
+                populate: [
+                  {
+                    path: 'createdBy',
+                    select: '_id username email',
+                  },
+                  {
+                    path: 'likes',
+                    select: '_id username email',
+                  },
+                ],
+              },
+            ],
+          })
+          .sort({ createdAt: -1 })
           .lean();
     
         if (!topics.length) {
@@ -315,12 +426,56 @@ export const resolvers = {
         return topics.map(topic => ({
           ...topic,
           id: topic._id.toString(),
+          commentCount: topic.comments?.length || 0,
+          likesCount: topic.likesCount ?? 0,
+          views: topic.views ?? 0,
+          createdBy: topic.createdBy
+            ? {
+                id: topic.createdBy._id.toString(),
+                username: topic.createdBy.username || 'N/A',
+                email: topic.createdBy.email || 'N/A',
+              }
+            : { id: 'unknown', username: 'N/A', email: 'N/A' },
+          comments: topic.comments.map(comment => ({
+            ...comment,
+            id: comment._id.toString(),
+            createdBy: comment.createdBy
+              ? {
+                  id: comment.createdBy._id.toString(),
+                  username: comment.createdBy.username || 'N/A',
+                  email: comment.createdBy.email || 'N/A',
+                }
+              : { id: 'unknown', username: 'N/A', email: 'N/A' },
+            likes: comment.likes?.map(user => ({
+              id: user._id.toString(),
+              username: user.username || 'N/A',
+              email: user.email || 'N/A',
+            })) || [],
+            replies: comment.replies?.map(reply => ({
+              ...reply,
+              id: reply._id.toString(),
+              createdBy: reply.createdBy
+                ? {
+                    id: reply.createdBy._id.toString(),
+                    username: reply.createdBy.username || 'N/A',
+                    email: reply.createdBy.email || 'N/A',
+                  }
+                : { id: 'unknown', username: 'N/A', email: 'N/A' },
+              likes: reply.likes?.map(user => ({
+                id: user._id.toString(),
+                username: user.username || 'N/A',
+                email: user.email || 'N/A',
+              })) || [],
+            })) || [],
+          })),
         }));
       } catch (error) {
-        console.error('Error fetching topics by courseSlug:', error.message);
+        console.error('Error fetching topics by courseSlug:', error);
         throw new Error(`Could not fetch topics: ${error.message}`);
       }
     },
+    
+    
     
     
     getCommentsByTopic: async (_, { topicId }) => {
